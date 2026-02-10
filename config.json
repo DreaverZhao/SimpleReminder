@@ -1,0 +1,9 @@
+{
+  "ReminderIntervalMinutes": 30,
+  "IdleThresholdMinutes": 3,
+  "RepeatReminderIntervalMinutes": 5,
+  "ReminderMessages": [
+    "Time to stand up and stretch! 🧘",
+    "Remember to drink some water! 💧"
+  ]
+}
