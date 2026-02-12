@@ -2,6 +2,12 @@
 echo Building Simple Reminder...
 echo.
 
+@REM Check if SimpleReminder is running and close it
+echo Checking for running instances...
+powershell -Command "Get-Process SimpleReminder -ErrorAction SilentlyContinue | ForEach-Object { Write-Host 'Closing running application...'; Stop-Process -Id $_.Id -Force }"
+timeout /t 1 /nobreak >nul 2>&1
+echo.
+
 @REM Check if dotnet CLI is installed
 dotnet --version >nul 2>&1
 if %errorlevel% neq 0 (
