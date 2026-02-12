@@ -8,19 +8,19 @@ namespace SimpleReminder
     public class ReminderApp : ApplicationContext
     {
         private NotifyIcon? trayIcon;
-        private System.Threading.Timer? reminderTimer;
         private System.Threading.Timer? repeatReminderTimer;
-        private System.Windows.Forms.Timer? tooltipUpdateTimer;
+        private System.Windows.Forms.Timer? mainTimer;
         private ReminderConfig config;
         private int currentReminderIndex = 0;
         private string? lastReminderMessage;
-        private DateTime nextReminderTime;
+        private int remainingSeconds;
+        private bool isPaused = false;
 
         public ReminderApp()
         {
             config = ReminderConfig.Load();
             InitializeTrayIcon();
-            StartReminderTimer();
+            ResetReminderCountdown();
         }
 
         private void InitializeTrayIcon()
@@ -53,37 +53,47 @@ namespace SimpleReminder
             trayIcon.ContextMenuStrip = contextMenu;
             trayIcon.DoubleClick += OnTrayIconDoubleClick;
 
-            // Setup tooltip update timer (update every second)
-            tooltipUpdateTimer = new System.Windows.Forms.Timer();
-            tooltipUpdateTimer.Interval = 1000; // 1 second
-            tooltipUpdateTimer.Tick += UpdateTooltip;
-            tooltipUpdateTimer.Start();
+            // Setup main timer (ticks every second)
+            mainTimer = new System.Windows.Forms.Timer();
+            mainTimer.Interval = 1000; // 1 second
+            mainTimer.Tick += OnMainTimerTick;
+            mainTimer.Start();
         }
 
-        private void StartReminderTimer()
+        private void ResetReminderCountdown()
         {
-            // Start timer with configured interval (convert minutes to milliseconds)
-            int intervalMs = config.ReminderIntervalMinutes * 60 * 1000;
-            nextReminderTime = DateTime.Now.AddMilliseconds(intervalMs);
-            reminderTimer = new System.Threading.Timer(
-                OnTimerElapsed,
-                null,
-                intervalMs,
-                intervalMs);
+            remainingSeconds = config.ReminderIntervalMinutes * 60;
         }
 
-        private void OnTimerElapsed(object? state)
+        private void OnMainTimerTick(object? sender, EventArgs e)
         {
-            // Update next reminder time
-            int intervalMs = config.ReminderIntervalMinutes * 60 * 1000;
-            nextReminderTime = DateTime.Now.AddMilliseconds(intervalMs);
-
-            // Check if user is idle
-            if (UserActivityMonitor.IsUserIdle(config.IdleThresholdMinutes))
+            if (isPaused)
             {
-                return; // Skip reminder if user is idle
+                UpdateTooltipDisplay("Simple Reminder - Paused");
+                return;
             }
 
+            // Check if user is idle
+            bool isIdle = UserActivityMonitor.IsUserIdle(config.IdleThresholdMinutes);
+            
+            if (!isIdle)
+            {
+                // User is active, decrement countdown
+                remainingSeconds--;
+
+                if (remainingSeconds <= 0)
+                {
+                    // Time for a reminder!
+                    TriggerReminder();
+                }
+            }
+            
+            // Update tooltip display (shows idle state if idle)
+            UpdateTooltipDisplay(isIdle);
+        }
+
+        private void TriggerReminder()
+        {
             // Get next reminder message
             string message = config.ReminderMessages[currentReminderIndex];
             currentReminderIndex = (currentReminderIndex + 1) % config.ReminderMessages.Length;
@@ -93,6 +103,9 @@ namespace SimpleReminder
 
             // Store the message for potential repeat reminders
             lastReminderMessage = message;
+
+            // Reset the countdown
+            ResetReminderCountdown();
 
             // Start repeat reminder timer to check if user is still active
             StartRepeatReminderTimer();
@@ -112,32 +125,40 @@ namespace SimpleReminder
                 System.Threading.Timeout.Infinite); // One-shot timer
         }
 
-        private void UpdateTooltip(object? sender, EventArgs e)
+        private void UpdateTooltipDisplay(bool isIdle)
         {
             if (trayIcon == null) return;
 
-            if (reminderTimer == null)
+            if (isIdle)
             {
-                trayIcon.Text = "Simple Reminder - Paused";
-                return;
+                int minutes = remainingSeconds / 60;
+                int seconds = remainingSeconds % 60;
+                if (minutes >= 1)
+                {
+                    trayIcon.Text = $"Simple Reminder - Paused (idle) - {minutes}m {seconds}s";
+                }
+                else
+                {
+                    trayIcon.Text = $"Simple Reminder - Paused (idle) - {seconds}s";
+                }
             }
-
-            TimeSpan remaining = nextReminderTime - DateTime.Now;
-            
-            if (remaining.TotalSeconds < 0)
+            else if (remainingSeconds >= 60)
             {
-                trayIcon.Text = "Simple Reminder - Next reminder soon...";
-            }
-            else if (remaining.TotalMinutes >= 1)
-            {
-                int minutes = (int)remaining.TotalMinutes;
-                int seconds = remaining.Seconds;
+                int minutes = remainingSeconds / 60;
+                int seconds = remainingSeconds % 60;
                 trayIcon.Text = $"Simple Reminder - Next in {minutes}m {seconds}s";
             }
             else
             {
-                int seconds = (int)remaining.TotalSeconds;
-                trayIcon.Text = $"Simple Reminder - Next in {seconds}s";
+                trayIcon.Text = $"Simple Reminder - Next in {remainingSeconds}s";
+            }
+        }
+
+        private void UpdateTooltipDisplay(string text)
+        {
+            if (trayIcon != null)
+            {
+                trayIcon.Text = text;
             }
         }
 
@@ -166,22 +187,19 @@ namespace SimpleReminder
             var menuItem = sender as ToolStripMenuItem;
             if (menuItem == null) return;
 
-            if (reminderTimer == null)
+            if (isPaused)
             {
                 // Resume
-                StartReminderTimer();
+                isPaused = false;
                 menuItem.Text = "Pause";
             }
             else
             {
                 // Pause
-                reminderTimer?.Dispose();
-                reminderTimer = null;
+                isPaused = true;
                 repeatReminderTimer?.Dispose();
                 repeatReminderTimer = null;
                 menuItem.Text = "Resume";
-                if (trayIcon != null)
-                    trayIcon.Text = "Simple Reminder - Paused";
             }
         }
 
@@ -205,9 +223,8 @@ namespace SimpleReminder
 
         private void OnExit(object? sender, EventArgs e)
         {
-            reminderTimer?.Dispose();
             repeatReminderTimer?.Dispose();
-            tooltipUpdateTimer?.Dispose();
+            mainTimer?.Dispose();
             trayIcon.Visible = false;
             Application.Exit();
         }
@@ -216,9 +233,8 @@ namespace SimpleReminder
         {
             if (disposing)
             {
-                reminderTimer?.Dispose();
                 repeatReminderTimer?.Dispose();
-                tooltipUpdateTimer?.Dispose();
+                mainTimer?.Dispose();
                 trayIcon?.Dispose();
             }
             base.Dispose(disposing);

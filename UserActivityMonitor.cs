@@ -35,23 +35,5 @@ namespace SimpleReminder
 
             return idleMinutes >= idleThresholdMinutes;
         }
-
-        /// <summary>
-        /// Gets the number of minutes the user has been idle
-        /// </summary>
-        /// <returns>Idle time in minutes</returns>
-        public static double GetIdleTimeMinutes()
-        {
-            LASTINPUTINFO lastInputInfo = new LASTINPUTINFO();
-            lastInputInfo.cbSize = (uint)Marshal.SizeOf(lastInputInfo);
-
-            if (!GetLastInputInfo(ref lastInputInfo))
-            {
-                return 0;
-            }
-
-            uint idleTime = (uint)Environment.TickCount - lastInputInfo.dwTime;
-            return idleTime / 1000.0 / 60.0;
-        }
     }
 }
