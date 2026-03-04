@@ -15,6 +15,7 @@ namespace SimpleReminder
         private string? lastReminderMessage;
         private int remainingSeconds;
         private bool isPaused = false;
+        private bool wasIdle = false;
 
         public ReminderApp()
         {
@@ -75,6 +76,22 @@ namespace SimpleReminder
 
             // Check if user is idle
             bool isIdle = UserActivityMonitor.IsUserIdle(config.IdleThresholdMinutes);
+            
+            // Detect idle state transitions
+            if (isIdle && !wasIdle)
+            {
+                // User just became idle - stop repeat reminders
+                repeatReminderTimer?.Dispose();
+                repeatReminderTimer = null;
+            }
+            else if (!isIdle && wasIdle)
+            {
+                // User just returned from idle - welcome back and reset countdown
+                ShowNotification("Welcome Back!", "Let's get back to work!");
+                ResetReminderCountdown();
+            }
+            
+            wasIdle = isIdle;
             
             if (!isIdle)
             {
